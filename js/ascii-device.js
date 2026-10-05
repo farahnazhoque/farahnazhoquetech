@@ -7,7 +7,25 @@
   if (!box || !inkEl || !accEl) return;
 
   const GLYPHS = ' .:-=+*#%@';
-  const LETTERS = 'etaoinshrdlucmfwypbg';
+  const COLS = 34;
+  const BOOKS = [
+    {
+      title: 'East of Eden',
+      quote: 'And now that you do not have to be perfect, you can be good.',
+      author: 'John Steinbeck'
+    },
+    {
+      title: 'Villette',
+      quote: 'I am no bird; and no net ensnares me: I am a free human being with an independent will.',
+      author: 'Charlotte Bronte'
+    },
+    {
+      title: 'Persuasion',
+      quote: 'You pierce my soul. I am half agony, half hope.',
+      author: 'Jane Austen'
+    }
+  ];
+  const pageCache = new Map();
   const HX = 0.60;
   const HY = 0.88;
   const HZ = 0.05;
@@ -29,13 +47,35 @@
   let dv = 0.02;
   const t0 = performance.now();
 
-  function hsh(n) {
-    n = (n ^ 61) ^ (n >>> 16);
-    n = n + (n << 3);
-    n = n ^ (n >>> 4);
-    n = Math.imul(n, 0x27d4eb2d);
-    n = n ^ (n >>> 15);
-    return n >>> 0;
+  function wrapWords(text, width) {
+    const words = text.split(/\s+/);
+    const lines = [];
+    let line = '';
+    for (const word of words) {
+      if (!line) line = word;
+      else if (line.length + 1 + word.length <= width) line += ' ' + word;
+      else {
+        lines.push(line);
+        line = word;
+      }
+    }
+    if (line) lines.push(line);
+    return lines;
+  }
+
+  function pageLines(pageIdx) {
+    const key = pageIdx % BOOKS.length;
+    if (pageCache.has(key)) return pageCache.get(key);
+    const book = BOOKS[key];
+    const header = '#'.repeat(Math.min(COLS, book.title.length + 4));
+    const quoteLines = wrapWords(book.quote, COLS);
+    const rows = [header, ''];
+    rows.push(...quoteLines);
+    while (rows.length < 8) rows.push('');
+    rows.push(book.author);
+    while (rows.length < 10) rows.push('');
+    pageCache.set(key, rows);
+    return rows;
   }
 
   function fit() {
@@ -67,8 +107,9 @@
       if (flash > 1) { out.d = 1; return; }
       if (flash === 1) { out.d = 0.12; return; }
       if (sv > 0.9) {
+        const n = BOOKS.length;
         out.d = (sv < 0.9 + ds && su > 0.09 && su < 0.91)
-          ? (su < 0.09 + 0.82 * ((page % 5) + 1) / 5 ? 0.8 : 0.14) : 0;
+          ? (su < 0.09 + 0.82 * ((page % n) + 1) / n ? 0.8 : 0.14) : 0;
         return;
       }
       const mu = (su - 0.09) / 0.82;
@@ -78,15 +119,12 @@
       const li = Math.floor(mv * N);
       const f = mv * N - li;
       if (f >= N * ds / 0.78) { out.d = 0; return; }
-      const h = hsh(page * 97 + li * 13 + 5);
-      if (li === 1 || (li > 3 && h % 6 === 0)) { out.d = 0; return; }
-      const len = li === 0 ? 0.46 : 0.58 + 0.42 * ((h >>> 4) % 100) / 100;
-      if (mu > len) { out.d = 0; return; }
-      const k = Math.floor(mu * 34);
-      const hc = hsh(page * 131 + li * 17 + k * 3 + 1);
-      if (li !== 0 && hsh(page * 71 + li * 29 + (k >> 2)) % 9 < 2 && (k & 3) === 3) { out.d = 0; return; }
-      out.ch = li === 0 ? '#' : LETTERS[hc % LETTERS.length];
-      out.acc = li === 3 + (page % 4);
+      const lines = pageLines(page);
+      const lineText = lines[li] || '';
+      const col = Math.floor(mu * COLS);
+      if (col >= lineText.length) { out.d = 0; return; }
+      out.ch = lineText[col];
+      out.acc = li === 8 && lineText.length > 0;
       return;
     }
     if (v > 0.735 && v < 0.925 && u > 0.1 && u < 0.9) {
